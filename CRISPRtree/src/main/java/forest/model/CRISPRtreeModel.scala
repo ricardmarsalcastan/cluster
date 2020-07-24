@@ -54,6 +54,7 @@ class CRISPRtreeModel(
 
       if (originalTreeAccuracy < rightModifiedTreeAccuracy) {
         trees += tree
+        tree.topNode.rightNode = model.trees(model.trees.length - 1).topNode.rightNode
       } else {
         tree.topNode.rightNode = model.trees(model.trees.length - 1).topNode.rightNode
       }
@@ -79,6 +80,7 @@ class CRISPRtreeModel(
 
       if (originalTreeAccuracy < leftModifiedTreeAccuracy && rightModifiedTreeAccuracy < leftModifiedTreeAccuracy) {
         trees += tree
+        tree.topNode.rightNode = model.trees(model.trees.length - 1).topNode.rightNode
       } else {
         tree.topNode.rightNode = model.trees(model.trees.length - 1).topNode.rightNode
       }

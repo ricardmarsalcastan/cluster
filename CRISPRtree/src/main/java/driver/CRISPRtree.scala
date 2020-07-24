@@ -232,53 +232,53 @@ object CRISPRtree {
     /********************************************************************************
      * Create a CRISPRtree model
      ********************************************************************************/
-    val gen = new CRISPRtreeModel(trainingData,testingData,model,numTrees)
+    val crispr = new CRISPRtreeModel(trainingData,testingData,model,numTrees)
     /*********************************************************************************
      * Test the model
      *********************************************************************************/
-    val genLabelAndPreds = gen.predict(testingData)
+    val crisprLabelAndPreds = crispr.predict(testingData)
     
-    val genMetrics = new MulticlassMetrics(genLabelAndPreds)
+    val crisprMetrics = new MulticlassMetrics(crisprLabelAndPreds)
     out.write("CLASSIFICATION PERFORMANCE:\n")
     // Confusion matrix
     out.write("Confusion matrix (predicted classes are in columns):\n")
-    out.write(genMetrics.confusionMatrix + "\n")
+    out.write(crisprMetrics.confusionMatrix + "\n")
     
     // Overall Statistics
-    val genAccuracy = genMetrics.accuracy
+    val genAccuracy = crisprMetrics.accuracy
     out.write("\nSummary Statistics:\n")
     out.write(s"GEN Accuracy = $genAccuracy\n")
     
     // Precision by label
-    val genLabels = genMetrics.labels
+    val genLabels = crisprMetrics.labels
     genLabels.foreach { l =>
-      out.write(s"Precision($l) = " + genMetrics.precision(l) + "\n")
+      out.write(s"Precision($l) = " + crisprMetrics.precision(l) + "\n")
     }
 
     // Recall by label
     genLabels.foreach { l =>
-      out.write(s"Recall($l) = " + genMetrics.recall(l) + "\n")
+      out.write(s"Recall($l) = " + crisprMetrics.recall(l) + "\n")
     }
 
     // False positive rate by label
     genLabels.foreach { l =>
-      out.write(s"FPR($l) = " + genMetrics.falsePositiveRate(l) + "\n")
+      out.write(s"FPR($l) = " + crisprMetrics.falsePositiveRate(l) + "\n")
     }
 
     // F-measure by label
     genLabels.foreach { l =>
-      out.write(s"F1-Score($l) = " + genMetrics.fMeasure(l) + "\n")
+      out.write(s"F1-Score($l) = " + crisprMetrics.fMeasure(l) + "\n")
     }
 
     // Weighted stats
-    out.write(s"\nWeighted precision: ${genMetrics.weightedPrecision}\n")
-    out.write(s"Weighted recall: ${genMetrics.weightedRecall}\n")
-    out.write(s"Weighted F1 score: ${genMetrics.weightedFMeasure}\n")
-    out.write(s"Weighted false positive rate: ${genMetrics.weightedFalsePositiveRate}\n")
+    out.write(s"\nWeighted precision: ${crisprMetrics.weightedPrecision}\n")
+    out.write(s"Weighted recall: ${crisprMetrics.weightedRecall}\n")
+    out.write(s"Weighted F1 score: ${crisprMetrics.weightedFMeasure}\n")
+    out.write(s"Weighted false positive rate: ${crisprMetrics.weightedFalsePositiveRate}\n")
     out.write(s"\nLearned classification forest model:\n")
     // output trees
     var count = 1
-    for (tree <- gen.trees) {
+    for (tree <- crispr.trees) {
       out.write("\nTREE " + count +"\n")
       out.write(tree.toDebugString)
       count += 1
