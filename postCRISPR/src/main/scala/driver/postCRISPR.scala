@@ -28,10 +28,10 @@ import forest.model.CRISPRModel
 
 object postCRISPR {
   def main(args: Array[String]) {
-    if (args.length < 7) {
+    if (args.length < 8) {
       System.err.println("Must supply valid arguments: [numClasses] [numTrees] [numForests]" +
         "[impurity] [maxDepth] [maxBins] [input filename] [output filename] " +
-        "[percent labeled]")
+        "[generations] [featureSubsetStrategy]")
       System.exit(1)
     }
     // setup parameters from command line arguments
@@ -43,6 +43,8 @@ object postCRISPR {
     val maxBins = args(5).toInt
     val inFile = args(6)
     val outName = args(7)
+    val generations = args(8).toInt
+    val featureSubsetStrategy = args(9)
     val outFile = "/mnt/c/Users/ricar/Documents/Research_SupervisedMLRF/Results_SupMLRF/" + outName
 
     // initialize spark
@@ -115,146 +117,29 @@ object postCRISPR {
     val splitTime = (System.nanoTime - startTimeSplit) / 1e9d
     */
 
-    /*
-
-
-
-/**************************************************************************
-     * Train a Spark mllib RandomForest model on the labeled and unlabeled
-     *  training data.
-     *************************************************************************/
-    // Empty categoricalFeaturesInfo indicates all features are continuous.
-    val categoricalFeaturesInfo = Map[Int, Int]()
-    // Let the algorithm choose.Number of features to consider for splits at each node.
-    // Supported values: "auto", "all", "sqrt", "log2", "onethird".
-    // If "auto" is set, this parameter is set based on numTrees:
-    //    if numTrees == 1, set to "all";
-    //    if numTrees is greater than 1 (forest) set to "sqrt".
-    val featureSubsetStrategy = "auto"
-
-    val startTimeTrain = System.nanoTime
-    val model = RandomForest.trainClassifier(trainingData, numClasses, categoricalFeaturesInfo,
-      numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)
-    val trainTime = (System.nanoTime - startTimeTrain) / 1e9d
-
-/**************************************************************************
-     * Test the RandomForest model on the fully labeled testing data.
-     *************************************************************************/
-
-    val startTimeTest = System.nanoTime
-    val labelAndPreds = testingData.map { point =>
-      val prediction = model.predict(point.features)
-      (point.label, prediction)
-    }
-    val testTime = (System.nanoTime - startTimeTest) / 1e9d
-
-/**************************************************************************
-     * Metrics calculation for classification and execution performance
-     *  evaluations.
-     *************************************************************************/
-
-    val out = new StringWriter()
-
-    val metrics = new MulticlassMetrics(labelAndPreds)
-    /*
-    out.write("\n\n\nTree 0\n")
-    out.write("Num of nodes: " + model.trees(0).numNodes+ "\n")
-    out.write("Top node: " + model.trees(0).topNode.toString()+ "\n")
-    out.write("Left node: " + model.trees(0).topNode.leftNode.toString()+ "\n")
-    out.write("Right node: " + model.trees(0).topNode.rightNode.toString()+ "\n")
-
-    out.write("\n\n\nTree 1\n")
-    out.write("Num of nodes: " + model.trees(1).numNodes+ "\n")
-    out.write("Top node: " + model.trees(1).topNode.toString()+ "\n")
-    out.write("Left node: " + model.trees(1).topNode.leftNode.toString()+ "\n")
-    out.write("Right node: " + model.trees(1).topNode.rightNode.toString()+ "\n")
-
-
-    model.trees(0).topNode.leftNode = model.trees(1).topNode.leftNode
-    out.write("\n\n\nMix Left\n")
-    out.write("Num of nodes: " + model.trees(0).numNodes+ "\n")
-    out.write("Top node: " + model.trees(0).topNode.toString()+ "\n")
-    out.write("Left node: " + model.trees(0).topNode.leftNode.toString()+ "\n")
-    out.write("Right node: " + model.trees(0).topNode.rightNode.toString()+ "\n")
-
-    model.trees(0).topNode.rightNode = model.trees(1).topNode.rightNode
-    out.write("\n\n\nMix Right\n")
-    out.write("Num of nodes: " + model.trees(0).numNodes+ "\n")
-    out.write("Top node: " + model.trees(0).topNode.toString()+ "\n")
-    out.write("Left node: " + model.trees(0).topNode.leftNode.toString()+ "\n")
-    out.write("Right node: " + model.trees(0).topNode.rightNode.toString()+ "\n")
-
-    */
-
-    out.write(outName + "\n")
-    out.write("EXECUTION PERFORMANCE:\n")
-    out.write("SplittingTime=" + splitTime + "\n")
-    out.write("TrainingTime=" + trainTime + "\n")
-    out.write("TestingTime=" + testTime + "\n\n")
-
-    out.write("CLASSIFICATION PERFORMANCE:\n")
-    // Confusion matrix
-    out.write("Confusion matrix (predicted classes are in columns):\n")
-    out.write(metrics.confusionMatrix + "\n")
-
-    // Overall Statistics
-    val accuracy = metrics.accuracy
-    out.write("\nSummary Statistics:\n")
-    out.write(s"Accuracy = $accuracy\n")
-
-    // Precision by label
-    val labels = metrics.labels
-    labels.foreach { l =>
-      out.write(s"Precision($l) = " + metrics.precision(l) + "\n")
-    }
-
-    // Recall by label
-    labels.foreach { l =>
-      out.write(s"Recall($l) = " + metrics.recall(l) + "\n")
-    }
-
-    // False positive rate by label
-    labels.foreach { l =>
-      out.write(s"FPR($l) = " + metrics.falsePositiveRate(l) + "\n")
-    }
-
-    // F-measure by label
-    labels.foreach { l =>
-      out.write(s"F1-Score($l) = " + metrics.fMeasure(l) + "\n")
-    }
-
-    // Weighted stats
-    out.write(s"\nWeighted precision: ${metrics.weightedPrecision}\n")
-    out.write(s"Weighted recall: ${metrics.weightedRecall}\n")
-    out.write(s"Weighted F1 score: ${metrics.weightedFMeasure}\n")
-    out.write(s"Weighted false positive rate: ${metrics.weightedFalsePositiveRate}\n")
-
-    // output trees
-    out.write(s"\nLearned classification forest model:\n ${model.toDebugString}\n\n\n\n\n")
-
-    // output training and testing data
-    //println("TRAINING DATA:\n")
-    //trainingData.collect().map(println)
-    //println("TESTING DATA:\n")
-    //testingData.collect().map(println)
-
-    */
 
      /********************************************************************************
      * Create a CRISPRtree model
      ********************************************************************************/
-    val crispr = new CRISPRModel(trainingData, testingData, numForests, numTrees, numClasses, "auto", impurity, maxDepth, maxBins,out)
+    val crispr = new CRISPRModel(trainingData, testingData, numForests, numTrees, numClasses, featureSubsetStrategy, impurity, maxDepth, maxBins,generations) 
 
+    
+    
+    for(s <- crispr.out) {
+      out.write(s + "\n")
+    }
 
    
-
-    // write string to file
+        // write string to file
     val outRDD = sc.parallelize(Seq(out.toString()))
     outRDD.saveAsTextFile(outFile)
 
+
     sc.stop()
   }
+  
 
+ 
 /**************************************************************************
    * Splits a dataset into stratified training and validation sets. The size
    * of the sets are user-determined. 

@@ -8,7 +8,9 @@ import org.apache.spark.mllib.tree.RandomForest
 import org.apache.spark.mllib.tree.model.RandomForestModel
 import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import java.io.StringWriter
+import org.apache.spark.SparkContext
 
+@SerialVersionUID(100L)
 class CRISPRModel(
   protected val trainingData:          RDD[LabeledPoint],
   protected val testingData:           RDD[LabeledPoint],
@@ -19,40 +21,60 @@ class CRISPRModel(
   protected val impurity:              String,
   protected val maxDepth:              Integer,
   protected val maxBins:               Integer,
-  protected val out:                   StringWriter)
+  protected val generations:           Integer)
   extends Serializable {
   var trees = new ListBuffer[(DecisionTreeModel, Double)]()
+  var out = new ListBuffer[String]()
+
   run()
 
   private def run() = {
 
+    val startTimeCreateRFAndSelectBestTrees = System.nanoTime
     createForestSelectBestTrees(trainingData, testingData, numClasses, numTrees,
       featureSubsetStrategy, impurity, maxDepth, maxBins,
       numForests)
+    val CreateRFAndSelectBestTreesTime = (System.nanoTime - startTimeCreateRFAndSelectBestTrees) / 1e9d
+
+    out += CreateRFAndSelectBestTreesTime.toString()
 
     val numOfTreesInTheForest = trees.size
 
 /*********************************************************************************
 * Test the Original model
 * *********************************************************************************/
-    val labelAndPreds = evaluateModel()
+    val startTimeTest = System.nanoTime
+    val labelAndPreds = evaluateModel(testingData)
+    val testTime = (System.nanoTime - startTimeTest) / 1e9d
+    out += testTime.toString()
+
     labelAndPreds.persist()
     val metrics = new MulticlassMetrics(labelAndPreds)
     val forestAccuracy = metrics.accuracy
-    out.write("Orifinal forest accuracy: " + forestAccuracy + "\n")
+    out += ("Orifinal forest accuracy: " + forestAccuracy)
     labelAndPreds.unpersist()
+    
+    var toPrint = "\n"
+    var count = 1
+    toPrint += "\n\nORIGINAL RFBT MODEL\n"
+    for ((tree, accuracy) <- trees) {
+      toPrint += ("Tree " + count + " accurcacy: " + accuracy + "\n")
+      toPrint += (tree.toDebugString)
+      count += 1
+    }
 
 /*********************************************************************************
 * Genetic modifications in multiple generations
 *********************************************************************************/
-    for (generation <- 1 to 3) {
+
+    val startGenerationTime = System.nanoTime
+    var accuracyPrint = "\n"
+    for (generation <- 1 to generations) {
 
       crisprAlgo()
 
       //Sort the trees by accuracy
-      trees.sortBy(_._2)
-
-      out.write(s"Current Num Trees before delete: ${trees.size}\n")
+      trees = trees.sortBy(_._2).reverse
 
       //Eliminate the worst trees
       val numTreesToDelete = trees.size - numOfTreesInTheForest
@@ -60,27 +82,30 @@ class CRISPRModel(
         trees.remove(numOfTreesInTheForest, numTreesToDelete)
       }
 
-      out.write(s"Current Num Trees after delete: ${trees.size}\n")
-
-      val labelAndPreds = evaluateModel()
+      val labelAndPreds = evaluateModel(testingData)
       labelAndPreds.persist()
       val metrics = new MulticlassMetrics(labelAndPreds)
       val forestAccuracy = metrics.accuracy
-      out.write(s"$generation generation forest accuracy: " + forestAccuracy + "\n")
+      accuracyPrint += (s"$generation :" + forestAccuracy + ",")
       labelAndPreds.unpersist()
     }
+    
+    
+    out += accuracyPrint
 
-  }
+    val generationTime = (System.nanoTime - startGenerationTime) / 1e9d
+    out += generationTime.toString()
 
-  def evaluateModel(): RDD[(Double, Double)] = {
-    testingData.map { point =>
-      val votes = scala.collection.mutable.Map.empty[Int, Double]
-      for ((tree, accuracy) <- trees) {
-        val prediction = tree.predict(point.features).toInt
-        votes(prediction) = votes.getOrElse(prediction, 0.0)
-      }
-      (point.label, votes.maxBy(_._2)._1.toDouble)
+    toPrint += "\n\nGENETIC RFBT MODEL\n"
+    count = 1
+    for ((tree, accuracy) <- trees) {
+      toPrint += ("Tree " + count + " accurcacy: " + accuracy + "\n")
+      toPrint += (tree.toDebugString)
+      count += 1
     }
+
+    out += toPrint
+
   }
 
   def createForestSelectBestTrees(
@@ -93,6 +118,7 @@ class CRISPRModel(
     maxDepth:              Integer,
     maxBins:               Integer,
     numForest:             Integer) = {
+    var trainingTimes = " "
     for (i <- 1 to numForest) {
       // Empty categoricalFeaturesInfo indicates all features are continuous.
       val categoricalFeaturesInfo = Map[Int, Int]()
@@ -101,8 +127,13 @@ class CRISPRModel(
       // If "auto" is set, this parameter is set based on numTrees:
       //    if numTrees == 1, set to "all";
       //    if numTrees is greater than 1 (forest) set to "sqrt".
+
+      val startTimeTrain = System.nanoTime
       val model = RandomForest.trainClassifier(trainingData, numClasses, categoricalFeaturesInfo,
         numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)
+      val trainTime = (System.nanoTime - startTimeTrain) / 1e9d
+
+      trainingTimes += (trainTime.toString() + ",")
 
       //Select the best trees from each forest and add it to the CRISPR model
       for (tree <- model.trees) {
@@ -116,11 +147,26 @@ class CRISPRModel(
         val metrics = new MulticlassMetrics(labelAndPreds)
         val accuracy = metrics.accuracy
 
-        if (accuracy > 0.99)
+        if (accuracy > 0.9)
           trees += ((tree, accuracy))
 
         labelAndPreds.unpersist()
       }
+    }
+    out += trainingTimes
+  }
+
+  def evaluateModel(
+    testingData: RDD[LabeledPoint]): RDD[(Double, Double)] = {
+    testingData.map { point =>
+      val votes = scala.collection.mutable.Map.empty[Int, Double]
+      for ((tree, accuracy) <- trees) {
+
+        val prediction = tree.predict(point.features).toInt
+        votes(prediction) = votes.getOrElse(prediction, 0.0)
+
+      }
+      (point.label, votes.maxBy(_._2)._1.toDouble)
     }
   }
 
@@ -129,28 +175,13 @@ class CRISPRModel(
     for ((tree, accuracy) <- trees) {
 
       /*
-      out.write("ORIGINAL TREE\n")
-      out.write(tree.toDebugString + "\n\n")
-      */
-
-      /*
        * Modify the right node of the tree
        */
       var randSelectedTree = rand.nextInt(numTrees)
       var (randTree, randTreeAccuracy) = trees(randSelectedTree)
 
-      /*out.write("RAND TREE\n")
-      out.write(randTree.toDebugString + "\n\n")
-      *
-      */
-
       var originalRightNode = tree.topNode.rightNode
       tree.topNode.rightNode = randTree.topNode.rightNode
-
-      /*out.write("MIX TREE\n")
-      out.write(tree.toDebugString + "\n\n")
-      *
-      */
 
       /*
        * Check if this new tree is better than before, if it is add it to the list of trees,
@@ -171,9 +202,6 @@ class CRISPRModel(
         tree.topNode.rightNode = originalRightNode
       }
       rightModifiedLabelAndPreds.unpersist()
-
-      /*out.write("BCAK TO ORIGINAL TREE\n")
-      out.write(tree.toDebugString + "\n\n")*/
 
       /*
        * Modify the left part of the tree
