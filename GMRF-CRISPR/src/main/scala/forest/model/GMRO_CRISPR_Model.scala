@@ -78,18 +78,13 @@ class GMRF_CRISPR_Model(
 /******************************************************************************
      * Test the original model
      *******************************************************************************/
-    //val startTimeTest = System.nanoTime
+    var startTimeTest = System.nanoTime
     val labelAndPreds = evaluateModel(testingData)
-    //val testTime = (System.nanoTime - startTimeTest) / 1e9d
-    //out += testTime.toString()
+    var testTime = (System.nanoTime - startTimeTest) / 1e9d
+    
+    var name: String = ("BEST TREES SELECTION MODEL")
+    printEval(labelAndPreds, name, 0, testTime)
 
-    labelAndPreds.persist()
-    val metrics = new MulticlassMetrics(labelAndPreds)
-    val forestAccuracy = metrics.accuracy
-    val forestWeightedRecall = metrics.weightedRecall
-    val forestWeightedFalsePositiveRate = metrics.weightedFalsePositiveRate
-    out += ("\nBEST TREES SELECTION MODEL\n" + forestAccuracy)
-    labelAndPreds.unpersist()
 
     /*
     var toPrint = "\n"
@@ -106,8 +101,10 @@ class GMRF_CRISPR_Model(
     //val startGenerationTime = System.nanoTime
 
     for (generation <- 1 to generations) {
-
+      
+      var startTimeTrain = System.nanoTime
       gmoAlgo()
+      
 
       //Sort the trees by accuracy
       trees = trees.sortBy(_._2).reverse
@@ -117,16 +114,15 @@ class GMRF_CRISPR_Model(
       if (numTreesToDelete > 0) {
         trees.remove(numOfTreesInTheForest, numTreesToDelete)
       }
+      var trainTime = (System.nanoTime - startTimeTrain) / 1e9d
 
       //Evaluate the new model
+      startTimeTest = System.nanoTime
       var labelAndPreds = evaluateModel(testingData)
-      labelAndPreds.persist()
-      var metrics = new MulticlassMetrics(labelAndPreds)
-      var forestAccuracy = metrics.accuracy
-      var forestWeightedRecall = metrics.weightedRecall
-      var forestWeightedFalsePositiveRate = metrics.weightedFalsePositiveRate
-      out += (s"\nGENERATION-$generation\n" + forestAccuracy)
-      labelAndPreds.unpersist()
+      testTime = (System.nanoTime - startTimeTest) / 1e9d
+      
+      name = (s"GENERATION-$generation\n")
+      printEval(labelAndPreds, name, trainTime, testTime)
     }
 
     //val generationTime = (System.nanoTime - startGenerationTime) / 1e9d
@@ -162,25 +158,21 @@ class GMRF_CRISPR_Model(
       //    if numTrees == 1, set to "all";
       //    if numTrees is greater than 1 (forest) set to "sqrt".
 
-      //val startTimeTrain = System.nanoTime
+      val startTimeTrain = System.nanoTime
       var model = RandomForest.trainClassifier(trainingData, numClasses, categoricalFeaturesInfo,
         numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)
-      //val trainTime = (System.nanoTime - startTimeTrain) / 1e9d
+      val trainTime = (System.nanoTime - startTimeTrain) / 1e9d
 
-      //trainingTimes += (trainTime.toString() + ",")
-
+      val startTimeTest = System.nanoTime
       var labelAndPreds = testingData.map { point =>
         var prediction = model.predict(point.features)
         (point.label, prediction)
       }
-
-      labelAndPreds.persist()
-      var metrics = new MulticlassMetrics(labelAndPreds)
-      var forestAccuracy = metrics.accuracy
-      var forestWeightedRecall = metrics.weightedRecall
-      var forestWeightedFalsePositiveRate = metrics.weightedFalsePositiveRate
-      out += (s"\nRANDOM FOREST $i\n" + forestAccuracy)
-      labelAndPreds.unpersist()
+      val testTime = (System.nanoTime - startTimeTest) / 1e9d
+      
+      
+      val name: String = (s"RANDOM FOREST $i\n" + i)
+      printEval(labelAndPreds, name, trainTime, testTime)
 
       //Select the best trees from each forest and add it to the CRISPR model
       for (currentTree <- model.trees) {
@@ -310,4 +302,58 @@ class GMRF_CRISPR_Model(
 
     }
   }
+  
+
+/******************************************************************************
+ *
+ ******************************************************************************/
+ def printEval(
+     labelAndPreds: RDD[(Double,Double)],
+     name: String,
+     trainTime: Double,
+     testTime: Double) = {
+   labelAndPreds.persist()
+   val metrics = new MulticlassMetrics(labelAndPreds)
+   out += ("Name=" + name + "\n")
+   out += ("TrainingTime=" + trainTime + "\n")
+   out += ("TestingTime=" + testTime + "\n")
+   
+   // Confusion matrix
+   out += ("Confusion matrix (predicted classes are in columns):\n")
+   out += (metrics.confusionMatrix + "\n")
+   
+   // Overall Statistics
+   val accuracy = metrics.accuracy
+   out += ("Accuracy=" + accuracy + "\n")
+   
+   // Precision by label
+   val labels = metrics.labels
+   labels.foreach { l =>
+      out +=(s"Precision($l)=" + metrics.precision(l) + "\n")
+    }
+   
+   // Recall by label
+   labels.foreach { l =>
+      out += (s"Recall($l)=" + metrics.recall(l) + "\n")
+    }
+   
+    // False positive rate by label
+    labels.foreach { l =>
+      out += (s"FPR($l)=" + metrics.falsePositiveRate(l) + "\n")
+    }
+    
+    // F-measure by label
+    labels.foreach { l =>
+      out += (s"F1-Score($l)=" + metrics.fMeasure(l) + "\n")
+    }
+    
+    // Weighted stats
+    out += (s"\nWeightedPrecision=${metrics.weightedPrecision}\n")
+    out += (s"WeightedRecall=${metrics.weightedRecall}\n")
+    out += (s"WeightedF1Score=${metrics.weightedFMeasure}\n")
+    out += (s"WeightedFalsePositiveRate=${metrics.weightedFalsePositiveRate}\n")
+    labelAndPreds.unpersist()
+ }
+  
+  
 }
