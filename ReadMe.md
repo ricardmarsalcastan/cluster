@@ -1,3 +1,5 @@
+# Cluster
+Project in progress.
 ### cse-cic-ids2018 characteristics
 #### https://www.unb.ca/cic/datasets/ids-2018.html
 Seven different attack scenarios: Brute-force, Heartbleed, Botnet, DoS, DDoS, Web attacks, and infiltration of the network from inside. The attacking infrastructure includes 50 machines and the victim organization has 5 departments and includes 420 machines and 30 servers. The dataset includes the captures network traffic and system logs of each machine, along with 80 features extracted from the captured traffic using CICFlowMeter-V3
