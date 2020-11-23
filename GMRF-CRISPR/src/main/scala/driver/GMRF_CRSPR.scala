@@ -27,12 +27,14 @@ import forest.model.GMRF_CRISPR_Model
 
 object GMRF_CRISPR {
   def main(args: Array[String]) {
+    
+    /*
     if (args.length < 8) {
       System.err.println("Must supply valid arguments: [numClasses] [numTrees] [numForests]" +
         "[impurity] [maxDepth] [maxBins] [input filename] [output filename] " +
         "[generations] [featureSubsetStrategy]")
       System.exit(1)
-    }
+    }*/
     // setup parameters from command line arguments
     val numClasses = args(0).toInt
     val numTrees = args(1).toInt
@@ -44,17 +46,28 @@ object GMRF_CRISPR {
     val outName = args(7)
     val generations = args(8).toInt
     val featureSubsetStrategy = args(9)
-    val outFile = "hdfs://master00.local:8020/data/castan/results/" + outName
-
+    val trainingSplit = args(10).toDouble  * 0.01
+    val outFile = "/mnt/c/Users/ricar/Documents/Research_GMRF-CRISPR/Results_GMRF-CRISPR/experiment3/" + outName//"hdfs://master00.local:8020/data/castan/results/" + outName
+    
+    
     // initialize spark
     val sparkConf = new SparkConf().setAppName("GMRF-CRISPR")
     val sc = new SparkContext(sparkConf)
 
+    /*
     // configure hdfs for output
     val hadoopConf = new org.apache.hadoop.conf.Configuration()
     val hdfs = org.apache.hadoop.fs.FileSystem.get(
       new java.net.URI("hdfs://master00.local:8020"), hadoopConf)
+    
+    * 
+    * 
+    */
     val out = new StringWriter()
+    
+    val hadoopConf = new org.apache.hadoop.conf.Configuration()
+    hadoopConf.set(outFile, "http://localhost:9870")
+    val hdfs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
 
 /**************************************************************************
      * Read in data and prepare for sampling
@@ -89,7 +102,7 @@ object GMRF_CRISPR {
 
     // Split the data into training and test sets (30% held out for testing)
     val startTimeSplit = System.nanoTime
-    val splits = data.randomSplit(Array(0.7, 0.3))
+    val splits = data.randomSplit(Array( trainingSplit, 1-trainingSplit))
     val (trainingData, testingData) = (splits(0), splits(1))
     trainingData.cache()
     val splitTime = (System.nanoTime - startTimeSplit) / 1e9d
@@ -119,12 +132,16 @@ object GMRF_CRISPR {
       out.write(s)
     }
 
+    
+    /*
     // delete current existing file for this model
     try {
       hdfs.delete(new org.apache.hadoop.fs.Path(outFile), true)
     } catch {
       case _: Throwable => { println("ERROR: Unable to delete " + outFile) }
     }
+    * 
+    */
 
     // write string to file
     val outRDD = sc.parallelize(Seq(out.toString()))

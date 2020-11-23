@@ -10,6 +10,9 @@ import org.apache.spark.mllib.tree.model.DecisionTreeModel
 import java.io.StringWriter
 import org.apache.spark.SparkContext
 
+import org.apache.spark.mllib.linalg.Vector
+
+
 /******************************************************************************
  * GMOModel tries to imitate the idea of the GMO technique of selecting
  * a sequence of DNA and replacing it with another one. In this case we replace
@@ -121,7 +124,7 @@ class GMRF_CRISPR_Model(
       var labelAndPreds = evaluateModel(testingData)
       testTime = (System.nanoTime - startTimeTest) / 1e9d
       
-      name = (s"GENERATION-$generation\n")
+      name = (s"GENERATION-$generation" + "\n")
       printEval(labelAndPreds, name, trainTime, testTime)
     }
 
@@ -164,50 +167,44 @@ class GMRF_CRISPR_Model(
       val trainTime = (System.nanoTime - startTimeTrain) / 1e9d
 
       val startTimeTest = System.nanoTime
-      var labelAndPreds = testingData.map { point =>
+      var labelAndPreds = evaluateForest(testingData, model.trees) 
+        /*
+        testingData.map { point =>
         var prediction = model.predict(point.features)
         (point.label, prediction)
-      }
+      }*/
       val testTime = (System.nanoTime - startTimeTest) / 1e9d
       
       
-      val name: String = (s"RANDOM FOREST $i\n" + i)
+      val name: String = (s"RANDOM FOREST $i" + "\n")
       printEval(labelAndPreds, name, trainTime, testTime)
 
       //Select the best trees from each forest and add it to the CRISPR model
       for (currentTree <- model.trees) {
-        var labelAndPreds = testingData.map { point =>
+        var labelAndPreds = evaluateForest(testingData, model.trees) 
+        /*
+          testingData.map { point =>
           var prediction = currentTree.predict(point.features)
           (point.label, prediction)
         }
+        * 
+        */
 
         labelAndPreds.persist()
         var metrics = new MulticlassMetrics(labelAndPreds)
         var currentTreeAccuracy = metrics.accuracy
-
-        if (trees.isEmpty) {
-          trees += ((currentTree, currentTreeAccuracy))
-        } else {
-          trees = trees.sortBy(_._2).reverse
-
-          var (lastTree, lastTreeAccuracy) = trees(trees.size - 1)
-
-          if (currentTreeAccuracy > lastTreeAccuracy) {
-
-            trees += ((currentTree, currentTreeAccuracy))
-
-            if (trees.size > numTrees) {
-              trees = trees.sortBy(_._2).reverse
-              //Delete the last element of the list
-              trees.remove(trees.size - 1)
-            }
-          }
-        }
-
+        //Add all the trees to the model
+        trees += ((currentTree, currentTreeAccuracy))
         labelAndPreds.unpersist()
       }
     }
-
+    
+    
+    if(numForests != 1) {
+      trees = trees.sortBy(_._2)
+      val numToRemove = trees.size - numTrees -1
+      trees.remove(0,numToRemove)
+    }
     //out += trainingTimes
   }
 
@@ -235,6 +232,21 @@ class GMRF_CRISPR_Model(
       (point.label, votes.maxBy(_._2)._1.toDouble)
     }
   }
+  
+  def evaluateForest(
+    testingData: RDD[LabeledPoint],
+    treesModel: Array[DecisionTreeModel]): RDD[(Double, Double)] = {
+    testingData.map { point =>
+      val votes = scala.collection.mutable.Map.empty[Int, Double]
+      for (tree <- treesModel) {
+
+        val prediction = tree.predict(point.features).toInt
+        votes(prediction) = votes.getOrElse(prediction, 0.0)
+
+      }
+      (point.label, votes.maxBy(_._2)._1.toDouble)
+    }
+  }
 
 /******************************************************************************
  *
@@ -246,7 +258,8 @@ class GMRF_CRISPR_Model(
       /*
        * Modify the right node of the tree
        */
-      var randSelectedTree = rand.nextInt(numTrees)
+      var maxRandNum = trees.length - 1
+      var randSelectedTree = rand.nextInt(maxRandNum)
       var (randTree, randTreeAccuracy) = trees(randSelectedTree)
 
       var originalRightNode = tree.topNode.rightNode
@@ -275,7 +288,8 @@ class GMRF_CRISPR_Model(
       /*
        * Modify the left part of the tree
        */
-      randSelectedTree = rand.nextInt(numTrees)
+      maxRandNum = trees.length - 1
+      randSelectedTree = rand.nextInt(maxRandNum)
       var (randTreeL, randTreeAccuracyL) = trees(randSelectedTree)
 
       var originalLeftNode = tree.topNode.leftNode
@@ -348,12 +362,37 @@ class GMRF_CRISPR_Model(
     }
     
     // Weighted stats
-    out += (s"\nWeightedPrecision=${metrics.weightedPrecision}\n")
+    out += (s"WeightedPrecision=${metrics.weightedPrecision}\n")
     out += (s"WeightedRecall=${metrics.weightedRecall}\n")
     out += (s"WeightedF1Score=${metrics.weightedFMeasure}\n")
     out += (s"WeightedFalsePositiveRate=${metrics.weightedFalsePositiveRate}\n")
     labelAndPreds.unpersist()
  }
+ 
+ /*
+ /**
+   * Predict values for a single data point using the model trained.
+   *
+   * @param features array representing a single data point
+   * @return predicted category from the trained model
+   */
+  def predict(features: Vector): Double = {
+    predictByVoting(features)
+  }
+  
+  /**
+   * Classifies a single data point based on (weighted) majority votes.
+   */
+  private def predictByVoting(features: Vector): Double = {
+    val votes = mutable.Map.empty[Int, Double]
+    trees.view.zip(treeWeights).foreach { case (tree, weight) =>
+      val prediction = tree.predict(features).toInt
+      votes(prediction) = votes.getOrElse(prediction, 0.0) + weight
+    }
+    votes.maxBy(_._2)._1
+  }
+  * 
+  */
   
   
 }
